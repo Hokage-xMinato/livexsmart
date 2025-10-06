@@ -1,0 +1,25 @@
+{
+  "name": "smartrz-online-classes",
+  "version": "1.0.0",
+  "description": "SmartRZ Online Classes Platform - Live class data fetcher and display",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": [
+    "express",
+    "cron",
+    "online-classes",
+    "web-scraper"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "node-cron": "^4.2.1"
+  }
+}
