@@ -63,13 +63,17 @@ async function fetchContent(type, timestamp, signature) {
   console.error("❌ Token fetch failed:");
   if (err.response) {
     console.error("Status:", err.response.status);
-    console.error("Headers:", err.response.headers);
-    console.error("Data:", err.response.data);
+    console.error("Headers:", JSON.stringify(err.response.headers, null, 2));
+    console.error("Data:", JSON.stringify(err.response.data, null, 2));
+  } else if (err.request) {
+    console.error("No response received. Request details:");
+    console.error(err.request);
   } else {
     console.error("Error message:", err.message);
   }
   throw err;
 }
+
 
 
     const jsonData = response.data;
