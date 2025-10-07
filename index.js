@@ -23,24 +23,45 @@ async function fetchToken() {
       headers: {
         'User-Agent': UA,
         'Referer': REFERER
-      }
+      },
+      timeout: 10000 // 10s timeout in case server hangs
     });
 
     const jsonData = response.data;
-    
-    if (jsonData.timestamp && jsonData.signature) {
-      return {
-        timestamp: jsonData.timestamp,
-        signature: jsonData.signature
-      };
+
+    // Check if response has expected fields
+    if (!jsonData || typeof jsonData !== 'object') {
+      throw new Error(`Invalid JSON response: ${JSON.stringify(jsonData)}`);
     }
-    
-    throw new Error('Authentication failed');
+
+    if (!jsonData.timestamp || !jsonData.signature) {
+      throw new Error(`Missing token fields. Response: ${JSON.stringify(jsonData)}`);
+    }
+
+    console.log(`✅ Token fetched successfully: timestamp=${jsonData.timestamp}, signature=${jsonData.signature}`);
+    return {
+      timestamp: jsonData.timestamp,
+      signature: jsonData.signature
+    };
   } catch (error) {
-    console.error('Token fetch failed:', error.message);
-    throw error;
+    if (error.response) {
+      // Server responded with a status code outside 2xx
+      console.error("❌ Token fetch failed - Server response:");
+      console.error("Status:", error.response.status);
+      console.error("Headers:", JSON.stringify(error.response.headers, null, 2));
+      console.error("Data:", JSON.stringify(error.response.data, null, 2));
+    } else if (error.request) {
+      // Request was made but no response received
+      console.error("❌ Token fetch failed - No response received:");
+      console.error(error.request);
+    } else {
+      // Other errors (parsing, setup, etc.)
+      console.error("❌ Token fetch failed - Error:", error.message);
+    }
+    throw new Error(`Token fetch failed: ${error.message}`);
   }
 }
+
 
 async function fetchContent(type, timestamp, signature) {
   try {
@@ -112,28 +133,34 @@ function modifyContent(data) {
 
 async function updateData() {
   console.log('Updating classes...');
-  
+
   try {
-    const token = await fetchToken();
-    
-    const [liveData, upData, completedData] = await Promise.all([
-      fetchContent('live', token.timestamp, token.signature),
-      fetchContent('up', token.timestamp, token.signature),
-      fetchContent('completed', token.timestamp, token.signature)
-    ]);
-    
+    // Fetch fresh token and data for each type
+    const { timestamp: liveTs, signature: liveSig } = await fetchToken();
+    const liveData = await fetchContent('live', liveTs, liveSig);
+
+    const { timestamp: upTs, signature: upSig } = await fetchToken();
+    const upData = await fetchContent('up', upTs, upSig);
+
+    const { timestamp: completedTs, signature: completedSig } = await fetchToken();
+    const completedData = await fetchContent('completed', completedTs, completedSig);
+
     cachedData = {
       live: Array.isArray(liveData) ? liveData : [],
       up: Array.isArray(upData) ? upData : [],
       completed: Array.isArray(completedData) ? completedData : [],
       lastUpdated: new Date().toISOString()
     };
-    
-    console.log(`Updated - Live: ${cachedData.live.length}, Upcoming: ${cachedData.up.length}, Completed: ${cachedData.completed.length}`);
-  } catch (error) {
-    console.error('Update failed:', error.message);
+
+    console.log(`✅ Updated successfully: 
+      Live (${cachedData.live.length}), 
+      Upcoming (${cachedData.up.length}), 
+      Completed (${cachedData.completed.length})`);
+  } catch (err) {
+    console.error("Update failed:", err.message);
   }
 }
+
 
 function generateHTML() {
   const { live, up, completed, lastUpdated } = cachedData;
