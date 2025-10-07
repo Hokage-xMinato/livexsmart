@@ -18,45 +18,34 @@ let cachedData = {
   lastUpdated: null
 };
 
+const cloudscraper = require('cloudscraper');
+
 async function fetchToken() {
   try {
-    const options = {
-      uri: TOKEN_URL,
-      method: 'GET',
+    const body = await cloudscraper.get({
+      url: TOKEN_URL,
       headers: {
         'User-Agent': UA,
-        'Referer': REFERER,
-        'Accept': '*/*',
-        'Accept-Encoding': 'gzip, deflate, br'
-      },
-      gzip: true,
-      timeout: 10000,
-      json: true // ask cloudscraper to parse JSON for us
-    };
-
-    const jsonData = await cloudscraper.request(options);
-
-    if (!jsonData || typeof jsonData !== 'object') {
-      throw new Error(`Invalid JSON response from token endpoint: ${JSON.stringify(jsonData)}`);
+        'Referer': REFERER
+      }
+    });
+    
+    const jsonData = JSON.parse(body);
+    
+    if (jsonData.timestamp && jsonData.signature) {
+      return {
+        timestamp: jsonData.timestamp,
+        signature: jsonData.signature
+      };
     }
-
-    if (!jsonData.timestamp || !jsonData.signature) {
-      throw new Error(`Token missing fields. Response: ${JSON.stringify(jsonData)}`);
-    }
-
-    console.log(`✅ Token fetched: timestamp=${jsonData.timestamp}, signature=${jsonData.signature}`);
-    return { timestamp: jsonData.timestamp, signature: jsonData.signature };
-
+    
+    throw new Error('Authentication failed: missing timestamp/signature');
   } catch (error) {
-    // cloudscraper errors are often plain Error objects
-    console.error('❌ Token fetch failed (cloudscraper):', error && error.message ? error.message : error);
-    if (error && error.response) {
-      // sometimes cloudscraper exposes response body
-      console.error('Response body:', error.response.body || error.response);
-    }
+    console.error('❌ Token fetch failed (cloudscraper):', error.message);
     throw error;
   }
 }
+
 
 
 async function fetchContent(type, timestamp, signature) {
