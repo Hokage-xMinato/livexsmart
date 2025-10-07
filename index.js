@@ -1,6 +1,5 @@
 const express = require('express');
 const cron = require('node-cron');
-const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -17,24 +16,9 @@ let cachedData = {
   lastUpdated: null
 };
 
-function httpsRequest(url, options = {}) {
-  return new Promise((resolve, reject) => {
-    const req = https.request(url, options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => resolve({ data, statusCode: res.statusCode, headers: res.headers }));
-    });
-    req.on('error', reject);
-    if (options.body) {
-      req.write(options.body);
-    }
-    req.end();
-  });
-}
-
 async function fetchToken() {
   try {
-    const response = await httpsRequest(TOKEN_URL, {
+    const response = await fetch(TOKEN_URL, {
       method: 'GET',
       headers: {
         'User-Agent': UA,
@@ -42,7 +26,11 @@ async function fetchToken() {
       }
     });
 
-    const jsonData = JSON.parse(response.data);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const jsonData = await response.json();
     
     if (jsonData.timestamp && jsonData.signature) {
       return {
@@ -62,11 +50,10 @@ async function fetchContent(type, timestamp, signature) {
   try {
     const payload = JSON.stringify({ type });
     
-    const response = await httpsRequest(CONTENT_URL, {
+    const response = await fetch(CONTENT_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload),
         'x-timestamp': timestamp.toString(),
         'x-signature': signature,
         'User-Agent': UA,
@@ -75,12 +62,11 @@ async function fetchContent(type, timestamp, signature) {
       body: payload
     });
 
-    let jsonData;
-    try {
-      jsonData = JSON.parse(response.data);
-    } catch (parseError) {
-      throw new Error('Invalid response format');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
+
+    const jsonData = await response.json();
     
     if (!jsonData.data) {
       throw new Error('No content available');
