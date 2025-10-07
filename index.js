@@ -18,7 +18,7 @@ let cachedData = {
   lastUpdated: null
 };
 
-const cloudscraper = require('cloudscraper');
+
 
 async function fetchToken() {
   try {
