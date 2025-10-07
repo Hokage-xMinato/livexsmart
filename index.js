@@ -1,6 +1,7 @@
 const express = require('express');
 const cron = require('node-cron');
 const axios = require('axios');
+const cloudscraper = require('cloudscraper');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,46 +20,41 @@ let cachedData = {
 
 async function fetchToken() {
   try {
-    const response = await axios.get(TOKEN_URL, {
+    const options = {
+      uri: TOKEN_URL,
+      method: 'GET',
       headers: {
         'User-Agent': UA,
-        'Referer': REFERER
+        'Referer': REFERER,
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate, br'
       },
-      timeout: 10000 // 10s timeout in case server hangs
-    });
+      gzip: true,
+      timeout: 10000,
+      json: true // ask cloudscraper to parse JSON for us
+    };
 
-    const jsonData = response.data;
+    const jsonData = await cloudscraper.request(options);
 
-    // Check if response has expected fields
     if (!jsonData || typeof jsonData !== 'object') {
-      throw new Error(`Invalid JSON response: ${JSON.stringify(jsonData)}`);
+      throw new Error(`Invalid JSON response from token endpoint: ${JSON.stringify(jsonData)}`);
     }
 
     if (!jsonData.timestamp || !jsonData.signature) {
-      throw new Error(`Missing token fields. Response: ${JSON.stringify(jsonData)}`);
+      throw new Error(`Token missing fields. Response: ${JSON.stringify(jsonData)}`);
     }
 
-    console.log(`✅ Token fetched successfully: timestamp=${jsonData.timestamp}, signature=${jsonData.signature}`);
-    return {
-      timestamp: jsonData.timestamp,
-      signature: jsonData.signature
-    };
+    console.log(`✅ Token fetched: timestamp=${jsonData.timestamp}, signature=${jsonData.signature}`);
+    return { timestamp: jsonData.timestamp, signature: jsonData.signature };
+
   } catch (error) {
-    if (error.response) {
-      // Server responded with a status code outside 2xx
-      console.error("❌ Token fetch failed - Server response:");
-      console.error("Status:", error.response.status);
-      console.error("Headers:", JSON.stringify(error.response.headers, null, 2));
-      console.error("Data:", JSON.stringify(error.response.data, null, 2));
-    } else if (error.request) {
-      // Request was made but no response received
-      console.error("❌ Token fetch failed - No response received:");
-      console.error(error.request);
-    } else {
-      // Other errors (parsing, setup, etc.)
-      console.error("❌ Token fetch failed - Error:", error.message);
+    // cloudscraper errors are often plain Error objects
+    console.error('❌ Token fetch failed (cloudscraper):', error && error.message ? error.message : error);
+    if (error && error.response) {
+      // sometimes cloudscraper exposes response body
+      console.error('Response body:', error.response.body || error.response);
     }
-    throw new Error(`Token fetch failed: ${error.message}`);
+    throw error;
   }
 }
 
@@ -66,58 +62,63 @@ async function fetchToken() {
 async function fetchContent(type, timestamp, signature) {
   try {
     const payload = { type };
-    
-    try {
-  const response = await axios.post(CONTENT_URL, payload, {
-    headers: {
-      'Content-Type': 'application/json',
-      'x-timestamp': timestamp.toString(),
-      'x-signature': signature,
-      'User-Agent': UA,
-      'Referer': REFERER
+
+    const options = {
+      uri: CONTENT_URL,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-timestamp': timestamp.toString(),
+        'x-signature': signature,
+        'User-Agent': UA,
+        'Referer': REFERER,
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate, br'
+      },
+      body: payload,
+      gzip: true,
+      timeout: 15000,
+      json: true // ask cloudscraper to send JSON and parse response
+    };
+
+    const jsonData = await cloudscraper.request(options);
+
+    // some endpoints return { data: "base64..." } while others might differ
+    if (!jsonData || typeof jsonData !== 'object') {
+      throw new Error(`Invalid JSON from content endpoint (${type}): ${JSON.stringify(jsonData)}`);
     }
-  });
 
-  console.log("✅ Token fetch success:", response.data);
-  return response.data; // or whatever you’re using next
-} catch (err) {
-  console.error("❌ Token fetch failed:");
-  if (err.response) {
-    console.error("Status:", err.response.status);
-    console.error("Headers:", JSON.stringify(err.response.headers, null, 2));
-    console.error("Data:", JSON.stringify(err.response.data, null, 2));
-  } else if (err.request) {
-    console.error("No response received. Request details:");
-    console.error(err.request);
-  } else {
-    console.error("Error message:", err.message);
-  }
-  throw err;
-}
-
-
-
-    const jsonData = response.data;
-    
     if (!jsonData.data) {
-      throw new Error('No content available');
+      throw new Error(`No 'data' field in content response (${type}). Response: ${JSON.stringify(jsonData)}`);
     }
 
+    // decode base64 payload
     const decodedData = Buffer.from(jsonData.data, 'base64').toString('utf-8');
-    let parsedData = JSON.parse(decodedData);
-    
+
+    let parsedData;
+    try {
+      parsedData = JSON.parse(decodedData);
+    } catch (e) {
+      throw new Error(`Failed to parse decoded ${type} JSON: ${e.message}. Decoded: ${decodedData}`);
+    }
+
+    // normalize structure if the payload nests data
     if (parsedData && typeof parsedData === 'object' && parsedData.data && Array.isArray(parsedData.data)) {
       parsedData = parsedData.data;
     }
-    
+
     const modifiedData = modifyContent(parsedData);
-    
     return modifiedData;
   } catch (error) {
-    console.error(`Failed to fetch ${type}:`, error.message);
+    console.error(`❌ Failed to fetch ${type} via cloudscraper:`, error && error.message ? error.message : error);
+    // if cloudscraper provides extra response info, log it (best-effort)
+    if (error && error.response) {
+      console.error('Response (raw):', error.response);
+    }
     return null;
   }
 }
+
 
 function modifyContent(data) {
   let jsonString = JSON.stringify(data);
