@@ -22,29 +22,38 @@ let cachedData = {
 
 async function fetchToken() {
   try {
-    const body = await cloudscraper.get({
-      url: TOKEN_URL,
-      headers: {
-        'User-Agent': UA,
-        'Referer': REFERER
-      }
+    const body = await new Promise((resolve, reject) => {
+      cloudscraper.get(
+        {
+          url: TOKEN_URL,
+          headers: {
+            'User-Agent': UA,
+            'Referer': REFERER
+          }
+        },
+        (err, response, body) => {
+          if (err) return reject(err);
+          resolve(body);
+        }
+      );
     });
-    
+
     const jsonData = JSON.parse(body);
-    
+
     if (jsonData.timestamp && jsonData.signature) {
       return {
         timestamp: jsonData.timestamp,
         signature: jsonData.signature
       };
     }
-    
+
     throw new Error('Authentication failed: missing timestamp/signature');
   } catch (error) {
     console.error('❌ Token fetch failed (cloudscraper):', error.message);
     throw error;
   }
 }
+
 
 
 
