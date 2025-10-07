@@ -46,15 +46,31 @@ async function fetchContent(type, timestamp, signature) {
   try {
     const payload = { type };
     
-    const response = await axios.post(CONTENT_URL, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-timestamp': timestamp.toString(),
-        'x-signature': signature,
-        'User-Agent': UA,
-        'Referer': REFERER
-      }
-    });
+    try {
+  const response = await axios.post(CONTENT_URL, payload, {
+    headers: {
+      'Content-Type': 'application/json',
+      'x-timestamp': timestamp.toString(),
+      'x-signature': signature,
+      'User-Agent': UA,
+      'Referer': REFERER
+    }
+  });
+
+  console.log("✅ Token fetch success:", response.data);
+  return response.data; // or whatever you’re using next
+} catch (err) {
+  console.error("❌ Token fetch failed:");
+  if (err.response) {
+    console.error("Status:", err.response.status);
+    console.error("Headers:", err.response.headers);
+    console.error("Data:", err.response.data);
+  } else {
+    console.error("Error message:", err.message);
+  }
+  throw err;
+}
+
 
     const jsonData = response.data;
     
